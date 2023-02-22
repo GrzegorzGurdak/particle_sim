@@ -13,11 +13,9 @@ ChunkGrid::ChunkGrid(int cS, int wW, int wH) :
 		std::vector<std::vector<PhysicBody2d*>>
 		(gH)
 		);
-
-	emptyCol = { std::vector<std::vector<PhysicBody2d*>>(gH) };
 }
 
-void ChunkGrid::assignGrid(std::vector<PhysicBody2d>& obj) {
+void ChunkGrid::assignGrid(std::vector<PhysicBody2d*>& obj) {
 	for (auto& i : grid) {
 		for (auto& j : i) {
 			if (j.size() > 0) j.clear();
@@ -25,16 +23,16 @@ void ChunkGrid::assignGrid(std::vector<PhysicBody2d>& obj) {
 	}
 
 	for (auto& i : obj) {
-		int x = i.getPos().x / cellSize;
-		int y = i.getPos().y / cellSize;
+		int x = i->getPos().x / cellSize;
+		int y = i->getPos().y / cellSize;
 		if (0 <= x && x < grid_width && 0 <= y && y < grid_height)
-			grid.at(i.getPos().x / cellSize).at(i.getPos().y / cellSize).push_back(&i);
+			grid.at(i->getPos().x / cellSize).at(i->getPos().y / cellSize).push_back(i);
 	}
 }
 
-void ChunkGrid::updateChunkSize(const PhysicBody2d& obj) {
-	if (obj.getRadius() * 2 > cellSize) {
-		cellSize = obj.getRadius() * 2;
+void ChunkGrid::updateChunkSize(PhysicBody2d* obj) {
+	if (obj->getRadius() * 2 > cellSize) {
+		cellSize = obj->getRadius() * 2 ;
 		grid_width = window_width / cellSize;
 		grid_height = window_height / cellSize;
 		grid = std::vector<std::vector<std::vector<PhysicBody2d*>>>(grid_width,
@@ -63,8 +61,8 @@ void ChunkGrid::update_collision_mt() {
 	#pragma omp parallel for
 	for (int t = 0; t < split_num; t++) {
 
-		//int b{ 1 + t * grid_width / split_num };
-		//int e{ ((t * 2 + 1) * grid_width - 1) / split_num / 2 + 1 };
+		int b{ 1 + t * grid_width / split_num };
+		int e{ ((t * 2 + 1) * grid_width - 1) / split_num / 2 + 1 };
 
 		for (int x{ 1 + t*grid_width/split_num}; x < ((t * 2 + 1)* grid_width - 1) / split_num/2 + 1; x++) {
 			if (x == grid_width - 1) break;
@@ -83,8 +81,8 @@ void ChunkGrid::update_collision_mt() {
 	#pragma omp parallel for
 	for (int t = 0; t < split_num; t++) {
 
-		//int b{ ((t * 2 + 1) * grid_width - 1) / split_num / 2 + 1 };
-		//int e{ ((t + 1) * grid_width - 1) / split_num + 1 };
+		int b{ ((t * 2 + 1) * grid_width - 1) / split_num / 2 + 1 };
+		int e{ ((t + 1) * grid_width - 1) / split_num + 1 };
 
 		for (int x{ ((t * 2 + 1) * grid_width - 1) / split_num / 2 + 1 }; x < ((t + 1) * grid_width - 1) / split_num + 1; x++) {
 			if (x == grid_width - 1) break;
@@ -102,18 +100,25 @@ void ChunkGrid::update_collision_mt() {
 	}
 }
 
-void ChunkGrid::solve_collision(std::vector<PhysicBody2d*>& central, const std::vector<PhysicBody2d*>& neigh) {
+void ChunkGrid::solve_collision(std::vector<PhysicBody2d*>& central, std::vector<PhysicBody2d*>& neigh) {
 	for (auto& i : central) {
 		for (auto& j : neigh)
 		{
-			//if (&i == &j) break;
 			if (&i != &j) {
-				Vec2 diff = i->getPos() - j->getPos();
-				float diffLen = diff.length();
-				float dist = diffLen - (i->getRadius() + j->getRadius());
-				if (dist < 0) {
-					i->current_position -= diff / diffLen * (dist / 2);
-					j->current_position += diff / diffLen * (dist / 2);
+				if (collision_type == DEFAULT) {
+					Vec2 diff = i->getPos() - j->getPos();
+					float diffLen = diff.length();
+					float dist = diffLen - (i->getRadius() + j->getRadius());
+					if (dist < 0) {
+						if (i->isKinematic) i->current_position -= diff / diffLen * (dist / 2); // * 0.5; //squishiness
+						if (j->isKinematic) j->current_position += diff / diffLen * (dist / 2); // * 0.5;
+					}
+				}
+				else if (collision_type == FUNC) {
+					collision_function(i, j);
+				}
+				else if (collision_type == LAMBDA) {
+					collision_lambda(i, j);
 				}
 			}
 		}
@@ -133,113 +138,61 @@ int ChunkGrid::count() {
 
 ////PhysicSolver:
 
-PhysicSolver& PhysicSolver::add(const PhysicBody2d& obj) {
+PhysicSolver& PhysicSolver::add(PhysicBody2d* obj) {
 	objects.push_back(obj);
 	grid.updateChunkSize(obj);
 	return *this;
 }
 
-//void PhysicSolver::update(const float dtime, const Vec2& acc, const int sub_step) {
 void PhysicSolver::update(const float dtime, const int sub_step) {
 	float sub_dt = dtime / sub_step;
 
 	for (int i = 0; i < sub_step; i++) {
 		update_acceleration();
 		update_constraints();
+		update_links();
 		grid.assignGrid(objects);
-		//grid.update_collision();
-		grid.update_collision_mt();//multi_thread
+		grid.update_collision();
+		//grid.update_collision_mt();//multi_thread
 		update_position(sub_dt);
 	}
 }
-
-/*void PhysicSolver::update(const float dtime, const std::function<Vec2(PhysicBody2d&, std::vector<PhysicBody2d>&)>& acceleration_function, const int sub_step) {
-	float sub_dt = dtime / sub_step;
-
-	for (int i = 0; i < sub_step; i++) {
-		update_acceleration(acceleration_function);
-		update_constraints();
-		grid.assignGrid(objects);	//collision
-		grid.update_collision_mt();	//collision
-		update_position(sub_dt);
-	}
-}
-
-void PhysicSolver::update(const float dtime, const Vec2 &acc, const std::function<Vec2(PhysicBody2d&)> &constratint_fun, const int sub_step) {
-
-	float sub_dt = dtime / sub_step;
-
-	for (int i = 0; i < sub_step; i++) {
-		update_acceleration(acc);
-		update_constraints(constratint_fun);
-		grid.assignGrid(objects);	//collision
-		grid.update_collision_mt();	//collision
-		update_position(sub_dt);
-	}
-}
-
-void PhysicSolver::update(
-	const float dtime, const std::function<Vec2(PhysicBody2d&, std::vector<PhysicBody2d>&)> &acceleration_function,
-	const std::function<Vec2(PhysicBody2d&)> &constratint_fun, const int sub_step) {
-
-	float sub_dt = dtime / sub_step;
-
-	for (int i = 0; i < sub_step; i++) {
-		update_acceleration(acceleration_function);
-		update_constraints(constratint_fun);
-		grid.assignGrid(objects);	//collision
-		grid.update_collision_mt();	//collision
-		update_position(sub_dt);
-	}
-}*/
 
 void PhysicSolver::update_position(const float dtime)
 {
 	for (auto& i : objects)
-		i.update_position(dtime);
+		i->update_position(dtime);
 }
 
 void PhysicSolver::update_acceleration() {
 	if(acceleration_type == VALUE)
 		for (auto& i : objects)
-			i.accelerate(accelerationValue);
+			i->accelerate(accelerationValue);
 	else if(acceleration_type == FUNC)
 		for (auto& i : objects)
-			i.accelerate(acceleration_function(i, objects));
+			i->accelerate(acceleration_function(i, objects));
 }
-
-/*void PhysicSolver::update_acceleration(Vec2 accelerationValue) {
-	for (auto& i : objects)
-		i.accelerate(accelerationValue);
-}*/
-
-/*void PhysicSolver::update_acceleration(const std::function<Vec2(PhysicBody2d&, std::vector<PhysicBody2d>&)>& acceleration_function) {
-	for (auto& i : objects)
-		i.accelerate(acceleration_function(i, objects));
-}*/
 
 void PhysicSolver::update_constraints() {
 	if (constraint_type == DEFAULT) {
 		Vec2 sphere_centre(350, 350);
 		float radius = 300;
 		for (auto& i : objects) {
-			Vec2 diff = i.getPos() - sphere_centre;
-			float diffLen = diff.length();
-			if (diffLen + i.radius > radius) {
-				i.current_position -= diff / diffLen * (diffLen + i.radius - radius);
+			if (i->isKinematic) {
+				Vec2 diff = i->getPos() - sphere_centre;
+				float diffLen = diff.length();
+				if (diffLen + i->radius > radius) {
+					i->current_position -= diff / diffLen * (diffLen + i->radius - radius);
+				}
 			}
 		}
 	}
 	else if (constraint_type == FUNC) {
 		for (auto& i : objects)
-			i.current_position = constratint_fun(i);
+			if(i->isKinematic)
+				i->current_position = constratint_fun(i);
 	}
 }
-
-/*void PhysicSolver::update_constraints(const std::function<Vec2(PhysicBody2d&)>& constratint_fun) {
-	for (auto& i : objects)
-		i.current_position = constratint_fun(i);
-}*/
 
 void PhysicSolver::update_collision() {
 	for (auto& i : objects) {
@@ -247,26 +200,59 @@ void PhysicSolver::update_collision() {
 		{
 			//if (&i == &j) break;
 			if (&i != &j) {
-				Vec2 diff = i.getPos() - j.getPos();
+				Vec2 diff = i->getPos() - j->getPos();
 				float diffLen = diff.length();
-				float dist = diffLen - (i.getRadius() + j.getRadius());
+				float dist = diffLen - (i->getRadius() + j->getRadius());
 				if (dist < 0) {
-					i.current_position -= diff / diffLen * (dist / 2);
-					j.current_position += diff / diffLen * (dist / 2);
+					i->current_position -= diff / diffLen * (dist / 2);
+					j->current_position += diff / diffLen * (dist / 2);
 				}
 			}
 		}
 	}
 }
 
-std::pair<bool, PhysicBody2d> PhysicSolver::pop_from_position(const Vec2 cord) {
-	auto found = std::find_if(objects.begin(), objects.end(), [&cord](auto& i) {return i.isHere(cord); });
+void PhysicSolver::set_acceleration(const Vec2 accVal) {
+	acceleration_type = VALUE;
+	accelerationValue = accVal;
+}
+void PhysicSolver::set_acceleration(std::function<Vec2(PhysicBody2d*, std::vector<PhysicBody2d*>&)> accFun) {
+	acceleration_type = FUNC;
+	acceleration_function = accFun;
+}
+void PhysicSolver::set_acceleration() {
+	acceleration_type = NONE;
+}
+
+void PhysicSolver::set_constraints_def() {
+	constraint_type = DEFAULT;
+}
+void PhysicSolver::set_constraints(std::function<Vec2(PhysicBody2d*)> conFun) {
+	constraint_type = FUNC;
+	constratint_fun = conFun;
+}
+void PhysicSolver::set_constraints() {
+	constraint_type = NONE;
+}
+
+std::pair<bool, PhysicBody2d*> PhysicSolver::pop_from_position(const Vec2 cord) {
+	auto found = std::find_if(objects.begin(), objects.end(), [&cord](auto& i) {return i->isHere(cord); });
 	if (found != objects.end()) {
-		PhysicBody2d r = *found;
+		PhysicBody2d *r = * found;
+		//objects.erase(found);
+		return { true, r };
+	}
+	return { false, &PhysicBody2d::nullPB };
+}
+
+std::pair<bool, PhysicBody2d*> PhysicSolver::get_from_position(const Vec2 cord) {
+	auto found = std::find_if(objects.begin(), objects.end(), [&cord](auto& i) {return i->isHere(cord); });
+	if (found != objects.end()) {
+		PhysicBody2d *r = *found;
 		objects.erase(found);
 		return { true, r };
 	}
-	return { false, {} };
+	return { false, &PhysicBody2d::nullPB };
 }
 
 //PhysicDrawer:
@@ -274,6 +260,10 @@ std::pair<bool, PhysicBody2d> PhysicSolver::pop_from_position(const Vec2 cord) {
 void PhysicDrawer::draw(sf::RenderTarget& target, sf::RenderStates states) const {
 	for (const auto& i : physicSolver.objects)
 	{
-		target.draw(i.getFigure(), states);
+		target.draw(i->getFigure(), states);
+	}
+	for (const auto& i : physicSolver.links)
+	{
+		target.draw(i->getFigure(), states);
 	}
 }

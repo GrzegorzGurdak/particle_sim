@@ -13,122 +13,147 @@
 #include "PhysicBody2d.h"
 #include "PhysicSolver.h"
 #include "PhysicExamples.h"
+#include "ColorConv.h"
+#include "ImageGenerator.h"
+#include "GUI_elements.h"
 
 int main()
 {
 	sf::Clock clock;
-	sf::Clock fclock;
-	sf::RenderWindow window(sf::VideoMode(770, 730), "Orbiting", sf::Style::Titlebar | sf::Style::Close);
+	sf::RenderWindow window(sf::VideoMode(770, 730), "Orbiting", sf::Style::Titlebar | sf::Style::Close); //730
 	sf::Event event;
 	window.setFramerateLimit(60);
 
 	sf::Font font; font.loadFromFile("arial.ttf");
 	
-	sf::Text objectAmountText("", font);
-	sf::Text simTime("", font); simTime.setPosition(0, 30);
-	int simTimeValue{}, frame_count{};
-	sf::Text fps_text("", font); fps_text.setPosition(0, 60);
-	unsigned int FPS = 0, frame_counter = 0;
+	StatElement statElement(font);
 	
-	PhysicSolver sandbox(ChunkGrid(10, window.getSize().x, window.getSize().y));
+	PhysicSolver sandbox(ChunkGrid(15, window.getSize().x, window.getSize().y)); //30,33,36
+	//PhysicSolver sandbox = *PhysicExamples::Sandbox::cloth(window.getSize(), {100,100},10,10);
 	PhysicDrawer sandbox_draw(sandbox);
-	sandbox.add(PhysicBody2d(Vec2(150, 180),5));
-	sandbox.add(PhysicBody2d(Vec2(450, 180),5));
+	//sandbox.add(PhysicBody2d(Vec2(150, 180),5)).add(PhysicBody2d(Vec2(450, 180),5));
 
 	bool mousePressed = false;
 	Vec2 mousePosition;
+	
+	bool paused = false;
 
-	std::pair<bool, PhysicBody2d> dragBuffer;
+	std::pair<bool, PhysicBody2d*> dragBuffer;
 
-	srand(time(NULL));
+	//srand(time(NULL));
+	srand(5);
 	sf::err().rdbuf(NULL);
 
 	sandbox.set_acceleration(Vec2(0, 100));
+	//sandbox.set_acceleration(PhysicExamples::Acceleration::centreAcceleration({ 350,350 }, 10000));
+	/*sandbox.set_acceleration([](const PhysicBody2d* obj, const std::vector<PhysicBody2d*>&) {
+		return (obj->getOldPos() - obj->getPos()) * 600 * 0.9;
+	});*/
+	/*sandbox.set_acceleration([](const PhysicBody2d* obj, const std::vector<PhysicBody2d*>&) {
+		float r = obj->getRadius();
+		return Vec2(0, 1) * r * r * r;
+		});*/
+	//sandbox.set_constraints_def();
 	//sandbox.set_constraints(PhysicExamples::Constrains::boxRestrain({ 30,30 }, { 730,690 }));
-	sandbox.set_constraints([](PhysicBody2d& i) {
-		Vec2 diff = i.getPos() - Vec2(350, 350);
-		float diffLen = diff.length();
-		if (diffLen + i.getRadius() > 300) {
-			return i.getPos() - diff / diffLen * (diffLen + i.getRadius() - 300);
-		}
-		return i.getPos();
-	});
+	//sandbox.getChunkGrid().set_collision(PhysicExamples::Collisions::squishy_collision);
+	//sandbox.set_constraints(PhysicExamples::Constrains::defaultConstrain);
 
-	while (window.isOpen()){
+	ColorMap colormap("pic2.jpg", "result", { 30,30 }, { 730,690 });
+
+	bool dragEnable = false;
+	bool shiftPressed = false;
+	bool kinematicStateBefore;
+
+	while (window.isOpen()) {
 		window.clear();
 		if (window.pollEvent(event)) {
 			if (event.type == sf::Event::Closed || (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape))
 				window.close();
 
+			if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) {
+				ImageGenerator::exportResult(sandbox, "result");
+			}
+			else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space) {
+				paused = !paused;
+			}
+			else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::LShift) {
+				shiftPressed = true;
+			}
+			else if (event.type == sf::Event::KeyReleased && event.key.code == sf::Keyboard::LShift) {
+				shiftPressed = false;
+			}
+
 			if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
 				mousePressed = true;
 				mousePosition.set(event.mouseButton.x, event.mouseButton.y);
-			}else if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+			}
+			else if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
 				mousePressed = false;
 				mousePosition.set(event.mouseButton.x, event.mouseButton.y);
-			}else if(event.type == sf::Event::MouseMoved) 
+			}
+			else if (event.type == sf::Event::MouseMoved)
 				mousePosition.set(event.mouseMove.x, event.mouseMove.y);
 
-			if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Right) {
+			if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Right && shiftPressed) {
+				dragBuffer = sandbox.pop_from_position({ event.mouseButton.x,event.mouseButton.y });
+				if (dragBuffer.second != &PhysicBody2d::nullPB) {
+					dragEnable = true;
+					kinematicStateBefore = dragBuffer.second->isKinematic;
+					dragBuffer.second->isKinematic = false;
+				}
+			}
+			else if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Right) {
 				dragBuffer = sandbox.pop_from_position({ event.mouseButton.x,event.mouseButton.y });
 			}
 			else if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Right) {
-				if (dragBuffer.first) {
-					dragBuffer.second.move(mousePosition);
-					sandbox.add(dragBuffer.second);
+				if (dragBuffer.first && !dragEnable) {
+					auto pr = sandbox.pop_from_position({ event.mouseButton.x,event.mouseButton.y });
+					if (pr.first && pr.second != dragBuffer.second) sandbox.addLink(new PhysicLink2d(*dragBuffer.second, *pr.second, 20));
 					dragBuffer.first = false;
 				}
+				if (dragBuffer.first) dragBuffer.second->isKinematic = kinematicStateBefore;
+				dragEnable = false;
+			}
+
+			if (dragEnable && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::R) {
+				if (dragBuffer.first)
+					kinematicStateBefore = !kinematicStateBefore;
 			}
 		}
+
+		/*if (sandbox.getObjectAmount() < 9e3)
+			for (int i = 0; i < 5; i++)
+				sandbox.add(
+					new PhysicBody2d(Vec2{ 350, 300 } + Vec2::random_rad(40),
+					(double)rand() / RAND_MAX * 3 + 2,colormap.getNext()));
+
+		objectAmountText.setString(std::to_string(sandbox.getObjectAmount()));*/
 
 		if (mousePressed && clock.getElapsedTime().asMilliseconds() > 2) {
-			for (int i = 0; i < 5; i++) 
-				sandbox.add(PhysicBody2d(mousePosition + Vec2::random_rad(40), (double)rand() / RAND_MAX * 10 + 2));
+			for (int i = 0; i < 5; i++)
+				sandbox.add(
+					new PhysicBody2d(
+						mousePosition + Vec2::random_rad(40), (double)rand() / RAND_MAX * 3 + 2,
+						ColorConv::hsvToRgb((sandbox.getObjectAmount() / 5 % 256) / 256., 1, 1)
+					));
 			clock.restart();
-			objectAmountText.setString(std::to_string(sandbox.getObjectAmount()));
+			statElement.objectAmountUpdate(sandbox.getObjectAmount());
 		}
+		if (!paused) {
+			auto start = std::chrono::steady_clock::now();
+			sandbox.update(1 / 60., 4);
+			auto end = std::chrono::steady_clock::now();
 
-		auto start = std::chrono::steady_clock::now();
-		sandbox.update(1 / 60., 10);
-		//sandbox.update(1 / 60., Vec2(0, 100),PhysicExamples::Constrains::circleRestrain(Vec2(350,350),300), 10);
-		//sandbox.update(1 / 60., Vec2(0, 100), PhysicExamples::Constrains::boxRestrain({10,10}, {750,710}), 10);
-		/*sandbox.update(1 / 60., Vec2(0, 100), [](PhysicBody2d& i) {
-				Vec2 diff = i.getPos() - Vec2(350,350);
-				float diffLen = diff.length();
-				if (diffLen + i.getRadius() > 300) {
-					i.setPos(i.getPos() - diff / diffLen * (diffLen + i.getRadius() - 300));
-
-				}
-			}, 10);*/
-		//sandbox.update(1 / 60., [](PhysicBody2d& i, std::vector<PhysicBody2d>&) {return Vec2(0, 100); }, 10);
-		auto end = std::chrono::steady_clock::now();
-
-		simTimeValue += (std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
-
-		if (fclock.getElapsedTime().asSeconds() >= 1.0f)
-		{
-			if (frame_counter != 0) {
-				simTime.setString(std::to_string(simTimeValue / frame_counter) + "us");
-				simTimeValue = 0;
-			}
-
-			FPS = (unsigned int)((float)frame_counter / fclock.getElapsedTime().asSeconds());
-			fps_text.setString("fps: " + std::to_string(FPS));
-			fclock.restart();
-			frame_counter = 0;
+			statElement.simTimeAdd((std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()));
 		}
-		frame_counter++;
+		
+		statElement.update();
 
 		window.draw(sandbox_draw);
-		if (dragBuffer.first) {
-			dragBuffer.second.move(mousePosition);
-			window.draw(dragBuffer.second.getFigure());
+		if (dragEnable) {
+			dragBuffer.second->move(mousePosition);
 		}
-
-		window.draw(objectAmountText);
-		window.draw(simTime);
-		window.draw(fps_text);
-
+		window.draw(statElement);
 		window.display();
 	}
 }

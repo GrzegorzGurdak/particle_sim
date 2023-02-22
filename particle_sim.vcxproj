@@ -140,15 +140,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ImageGenerator.cpp" />
     <ClCompile Include="MVec.cpp" />
     <ClCompile Include="PhysicBody2d.cpp" />
     <ClCompile Include="particle_sim.cpp" />
+    <ClCompile Include="PhysicLink2d.cpp" />
     <ClCompile Include="PhysicSolver.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ColorConv.h" />
+    <ClInclude Include="GUI_elements.h" />
+    <ClInclude Include="ImageGenerator.h" />
     <ClInclude Include="MVec.h" />
     <ClInclude Include="PhysicBody2d.h" />
     <ClInclude Include="PhysicExamples.h" />
+    <ClInclude Include="PhysicLink2d.h" />
     <ClInclude Include="PhysicSolver.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -5,24 +5,33 @@
 struct PhysicBody2d
 {
 	PhysicBody2d(Vec2 cp, float r, sf::Color  cl) : 
-		current_position{ cp }, old_position{ cp }, radius{ r }, cs{ r } {cs.setFillColor(cl); }
+		current_position{ cp }, old_position{ cp }, radius{ r }, cs{ r } 
+	{
+		cs.setFillColor(cl);
+		cs.setPosition(current_position - Vec2{ radius,radius });
+	}
 	
 	PhysicBody2d(Vec2 cp = {}, float r = { 20 }) :
 		current_position{ cp }, old_position{ cp }, radius{ r }, cs{ r } 
-	{cs.setFillColor(sf::Color(rand()%256, rand() % 256, rand() % 256)); }
+	{
+		cs.setFillColor(sf::Color(rand() % 256, rand() % 256, rand() % 256)); 
+		cs.setPosition(current_position - Vec2{ radius,radius }); 
+	}
 
 	void update_position(const float dtime) {
- 		const Vec2 velocity = current_position - old_position; // velocity [/dtime]
-		old_position = current_position;
-		current_position += velocity + acceleration * dtime * dtime; //verlet
-		cs.setPosition(current_position - Vec2{radius,radius});
-		acceleration = 0;
+		if (isKinematic) {
+			const Vec2 velocity = current_position - old_position; // velocity [/dtime]
+			old_position = current_position;
+			current_position += velocity + acceleration * dtime * dtime; //verlet
+			cs.setPosition(current_position - Vec2{ radius,radius });
+		}acceleration = 0;
 	}
 
 	void accelerate(const Vec2 add_acc) { acceleration += add_acc; }
 
 	float getRadius() const { return radius; }
 	Vec2 getPos() const { return current_position; }
+	void setPos(const Vec2 p) { current_position = p; }
 	Vec2 getOldPos() const { return old_position; }
 	Vec2 getAcceleration() const { return acceleration; }
 	const sf::CircleShape& getFigure() const { return cs; }
@@ -33,8 +42,7 @@ struct PhysicBody2d
 
 	static PhysicBody2d nullPB;
 
-	//bool operator==(PhysicBody2d& other) { return this == &other; }
-	//bool operator!=(PhysicBody2d& other) { return this != &other; }
+	bool isKinematic = true;
 
 protected:
 	float radius;
@@ -44,6 +52,7 @@ protected:
 	sf::CircleShape cs;
 	friend class PhysicSolver;
 	friend class ChunkGrid;
+	friend class PhysicLink2d;
 	//accelerate
 };
 
