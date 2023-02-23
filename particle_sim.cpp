@@ -141,7 +141,7 @@ int main()
 		}
 		if (!paused) {
 			auto start = std::chrono::steady_clock::now();
-			sandbox.update(1 / 60., 4);
+			sandbox.update(1 / 60., 10);
 			auto end = std::chrono::steady_clock::now();
 
 			statElement.simTimeAdd((std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()));

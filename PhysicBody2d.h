@@ -27,22 +27,21 @@ struct PhysicBody2d
 		}acceleration = 0;
 	}
 
-	void accelerate(const Vec2 add_acc) { acceleration += add_acc; }
-
 	float getRadius() const { return radius; }
-	Vec2 getPos() const { return current_position; }
 	void setPos(const Vec2 p) { current_position = p; }
 	Vec2 getOldPos() const { return old_position; }
 	Vec2 getAcceleration() const { return acceleration; }
 	const sf::CircleShape& getFigure() const { return cs; }
 
+	Vec2 getPos() const { return current_position; }
+
+	void accelerate(const Vec2 add_acc) { acceleration += add_acc; }
 	void move(Vec2 p) { old_position = current_position = p; cs.setPosition(p - Vec2{ radius,radius }); }
 
 	bool isHere(Vec2 here) {return (current_position - here).length() < radius; }
+	bool isKinematic = true;
 
 	static PhysicBody2d nullPB;
-
-	bool isKinematic = true;
 
 protected:
 	float radius;
